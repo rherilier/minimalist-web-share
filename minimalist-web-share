@@ -1,0 +1,126 @@
+#!/usr/bin/sh
+
+LANG=C
+
+load()
+{
+    test -f "$1" && . "$1"
+}
+
+usage_config()
+{
+    echo "usage: `basename $0` config web-root base-url"
+    echo
+    echo "to configure minimalist-web-share"
+    echo
+    echo "web-root  sharing's root directory"
+    echo "base-url  sharing's base public URL"
+}
+
+usage_add()
+{
+    echo "usage: `basename $0` add [-e date] file [file ...]"
+    echo
+    echo "create a new sharing directory with files"
+    echo
+    echo "-e date  define an expiration date (see date's manpage for option '--date')"
+    echo "file     file to share"
+}
+
+usage()
+{
+    echo "usage: `basename $0` [-h|--help]"
+    echo
+    echo "-h, --help to show this help"
+    echo
+    usage_add
+    echo
+    usage_config
+}
+
+test $# -lt 1 && usage && exit 0
+
+case "$1"
+in
+    -h|--help)
+        usage && exit 0
+        ;;
+    config)
+        test $# -lt 2 && usage_config && exit 0
+        (
+            echo WEBROOT=\"$2\"
+            echo BASEURL=\"$3\"
+        ) | case `whoami`
+        in
+            root)
+                echo "global settings will be:"
+                tee /etc/minimalist-web-share.conf
+                ;;
+            *)
+                echo "user settings will be:"
+                tee $HOME/.config/minimalist-web-share.conf
+                ;;
+        esac
+        exit 0
+        ;;
+    add)
+        test $# -lt 2 && usage_add && exit 0
+        shift
+        break
+        ;;
+esac
+
+load "/etc/minimalist-web-share.conf"
+load "/home/`logname`/.config/minimalist-web-share.conf"
+
+test -z "$WEBROOT" && echo "WEBROOT is not defined, run `basename $0` config ... first" && exit 2
+test -z "$BASEURL" && echo "BASEURL is not defined, run `basename $0` config ... first" && exit 2
+
+EXPIRES_AT=
+
+case "$1"
+in
+    -e)
+        EXPIRES_AT="$2"
+        shift 2
+        ;;
+    *)
+        break
+        ;;
+esac
+
+test ! -d "$WEBROOT" && echo "'$WEBROOT' does not exists" && exit 3
+test ! -w "$WEBROOT" && echo "'$WEBROOT' is not writable" && exit 4
+
+build_info()
+{
+    for i
+    do
+        echo "$i"
+    done | sort | while IFS='' read F
+    do
+        basename "$F"
+        stat --format "%W-%F-%s" "$F"
+    done | paste -s -d':'
+}
+
+HASH=`build_info "$@" | md5sum | awk '{print $1}'`
+TARGET="$WEBROOT/$HASH"
+
+if test -d "$TARGET"
+then
+    echo "already shared in $BASEURL/$HASH"
+    exit 0
+fi
+
+mkdir -p "$TARGET"
+
+test -n "$EXPIRES_AT" && date --date="$EXPIRES_AT" +%s > "$TARGET/.expires-at"
+
+for F
+do
+    O=`readlink -f "$F"`
+    ln -s "$O" "$TARGET"
+done
+
+echo "$BASEURL/$HASH"

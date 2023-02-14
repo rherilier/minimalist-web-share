@@ -1,0 +1,17 @@
+#!/bin/sh
+
+CFG="/etc/minimalist-web-share.conf"
+
+test -f "$CFG" && . "$CFG"
+test -z "$WEBROOT" && /usr/bin/logger -t minimalist-web-share "ERROR no configuration file found" && exit 1
+
+cd "$WEBROOT"
+
+TODAY=`date +%s`
+
+find . -name ".expire-at" | while read E
+do
+    DATE=`cat "$E"`
+    DIR=`dirname "$E"`
+    test $TODAY -gt $DATE && rm -rf "$DIR"
+done
